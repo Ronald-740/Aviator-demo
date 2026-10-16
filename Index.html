@@ -1,1 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a1220">
+<title>bet Rocket - RonaldFx</title>
+<style>
+:root{--bg:#0a1220;--card:#141e30;--card2:#1d2a42;--cyan:#19d3c5;--gold:#ffc93c;--red:#ff4d5e;--text:#f1f5fb;--muted:#8896ad}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);max-width:480px;margin:0 auto;min-height:100vh;padding-bottom:20px}
+.top{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:#070d18;border-bottom:2px solid var(--cyan)}
+.logo{font-weight:800;font-size:18px}.logo span{color:var(--cyan)}
+.bal{background:var(--card2);padding:7px 12px;border-radius:20px;font-weight:700;font-size:14px}
+.bal b{color:var(--gold)}
+.history{display:flex;gap:6px;padding:10px 14px;overflow-x:auto;scrollbar-width:none}
+.history::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:700;background:var(--card2)}
+.chip.hi{color:var(--cyan)}.chip.lo{color:var(--red)}.chip.mid{color:var(--gold)}
+.stage{position:relative;margin:0 14px;height:260px;border-radius:18px;overflow:hidden;
+  background:radial-gradient(circle at 15% 100%,#0e3a42,#0a1220 70%);border:1px solid #1b3b48}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+#rocket{position:absolute;font-size:30px;transition:none;transform:translate(-50%,-50%) rotate(-35deg)}
+.mult{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+#m{font-size:54px;font-weight:900;text-shadow:0 0 20px rgba(25,211,197,.4)}
+#msg{font-size:13px;color:var(--muted);margin-top:4px}
+.crashed #m{color:var(--red);text-shadow:0 0 20px rgba(255,77,94,.5)}
+.panel{margin:14px;background:var(--card);border-radius:16px;padding:14px}
+.row{display:flex;gap:8px;align-items:center}
+.row label{font-size:12px;color:var(--muted)}
+input{width:100%;background:var(--card2);border:1px solid #2a3a58;color:var(--text);font-size:20px;font-weight:700;text-align:center;padding:10px;border-radius:10px;outline:none}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.quick button{background:var(--card2);border:0;color:var(--text);padding:9px;border-radius:8px;font-weight:700;font-size:13px}
+#go{width:100%;border:0;border-radius:12px;padding:16px;font-size:18px;font-weight:800;color:#04201e;background:var(--cyan);margin-top:4px}
+#go.cash{background:var(--gold);color:#2b1f00}
+#go.wait{background:var(--card2);color:var(--muted)}
+.auto{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--muted)}
+.auto input{width:80px;font-size:15px;padding:6px}
+.note{text-align:center;color:var(--muted);font-size:11px;margin:10px 14px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo">Trade <span>Rocket</span></div>
+  <div class="bal">💰 <b id="bal">1000</b></div>
+</div>
 
+<div class="history" id="hist"></div>
+
+<div class="stage" id="stage">
+  <canvas id="cv"></canvas>
+  <div id="rocket">🚀</div>
+  <div class="mult"><div id="m">1.00x</div><div id="msg">Place your bet</div></div>
+</div>
+
+<div class="panel">
+  <div class="row"><div style="flex:1"><label>Bet amount (demo points)</label>
+    <input id="bet" type="number" value="50" min="10" inputmode="numeric"></div></div>
+  <div class="quick">
+    <button data-v="10">10</button><button data-v="50">50</button>
+    <button data-v="100">100</button><button data-v="500">500</button>
+  </div>
+  <button id="go">BET</button>
+  <div class="auto">Auto cash out at <input id="auto" type="number" step="0.1" min="1.1" placeholder="2.0"> x</div>
+</div>
+
+<p class="note">Demo game with virtual points only. No real money.<br>© 2026 RonaldFx</p>
+
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d'),rocket=$('rocket'),stage=$('stage');
+let balance=1000,state='idle',mult=1,crashAt=2,start=0,betAmt=0,placed=false,cashed=false,hist=[];
+const DPR=devicePixelRatio||1;
+function resize(){cv.width=cv.offsetWidth*DPR;cv.height=cv.offsetHeight*DPR}
+resize();addEventListener('resize',resize);
+
+function genCrash(){
+  const r=Math.random();
+  if(r<0.04) return 1.00;
+  return Math.min(Math.floor(97/(1-Math.random()))/100,200);
+}
+function setBtn(text,cls){const b=$('go');b.textContent=text;b.className=cls||''}
+function addHist(v){
+  hist.unshift(v);hist=hist.slice(0,15);
+  $('hist').innerHTML=hist.map(x=>`<div class="chip ${x>=2?'hi':x<1.5?'lo':'mid'}">${x.toFixed(2)}x</div>`).join('');
+}
+function updBal(){$('bal').textContent=Math.floor(balance)}
+
+document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{if(!placed)$('bet').value=b.dataset.v});
+
+$('go').onclick=()=>{
+  if(state==='flying' && placed && !cashed){cashOut();return}
+  if(state==='idle' && !placed){
+    const a=Math.floor(+$('bet').value);
+    if(!a||a<10){$('msg').textContent='Minimum bet is 10';return}
+    if(a>balance){$('msg').textContent='Not enough points';return}
+    balance-=a;betAmt=a;placed=true;cashed=false;updBal();
+    setBtn('Waiting for next round...','wait');
+    $('msg').textContent='Bet placed: '+a;
+  }
+};
+
+function cashOut(){
+  cashed=true;
+  const win=betAmt*mult;balance+=win;updBal();
+  $('msg').textContent='Cashed out +'+Math.floor(win-betAmt)+' at '+mult.toFixed(2)+'x';
+  setBtn('Cashed out ✔','wait');
+}
+
+function round(){
+  state='countdown';stage.classList.remove('crashed');
+  let c=4;
+  if(!placed) setBtn('BET');
+  const iv=setInterval(()=>{
+    c--;
+    $('m').textContent='1.00x';
+    $('msg').textContent=c>0?(placed?'Bet placed. Starting in '+c:'Next round in '+c+'s'):'';
+    if(c<=0){clearInterval(iv);fly()}
+  },1000);
+  $('msg').textContent=placed?'Bet placed. Starting in 3':'Next round in 3s';
+  state='idle';
+}
+
+function fly(){
+  state='flying';crashAt=genCrash();start=performance.now();mult=1;
+  if(placed) setBtn('CASH OUT','cash'); else setBtn('Round in progress','wait');
+  requestAnimationFrame(loop);
+}
+
+function loop(now){
+  if(state!=='flying')return;
+  const t=(now-start)/1000;
+  mult=Math.pow(Math.E,0.11*t*1.0)+0.0*t; // smooth exponential growth
+  if(mult>=crashAt){mult=crashAt;draw(t);return crash()}
+  $('m').textContent=mult.toFixed(2)+'x';
+  if(placed&&!cashed){
+    const a=parseFloat($('auto').value);
+    if(a>=1.1&&mult>=a){cashOut()}
+    else setBtn('CASH OUT  '+Math.floor(betAmt*mult),'cash');
+  }
+  draw(t);
+  requestAnimationFrame(loop);
+}
+
+function draw(t){
+  const w=cv.width,h=cv.height;ctx.clearRect(0,0,w,h);
+  const prog=Math.min((mult-1)/Math.max(mult,2.5),1);
+  const ex=w*(0.08+0.8*Math.min(t/10,1));
+  const ey=h-(h*0.12)-prog*h*0.7;
+  const pts=[];
+  for(let i=0;i<=50;i++){
+    const f=i/50;
+    pts.push([f*(ex-w*0.04)+w*0.04, h-h*0.12-Math.pow(f,2)*(h-h*0.12-ey)]);
+  }
+  ctx.beginPath();ctx.moveTo(pts[0][0],h);
+  pts.forEach(p=>ctx.lineTo(p[0],p[1]));
+  ctx.lineTo(pts[50][0],h);ctx.closePath();
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'rgba(25,211,197,.35)');g.addColorStop(1,'rgba(25,211,197,0)');
+  ctx.fillStyle=g;ctx.fill();
+  ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+  ctx.strokeStyle=state==='crashed'?'#ff4d5e':'#19d3c5';
+  ctx.lineWidth=4*DPR;ctx.lineCap='round';ctx.stroke();
+  const e=pts[50];
+  rocket.style.left=(e[0]/DPR)+'px';rocket.style.top=(e[1]/DPR)+'px';
+}
+
+function crash(){
+  state='crashed';
+  stage.classList.add('crashed');
+  $('m').textContent=mult.toFixed(2)+'x';
+  rocket.textContent='💥';
+  addHist(mult);
+  if(placed&&!cashed){$('msg').textContent='Crashed! You lost '+betAmt}
+  else if(!placed){$('msg').textContent='Crashed at '+mult.toFixed(2)+'x'}
+  placed=false;cashed=false;betAmt=0;
+  if(balance<10){balance=1000;updBal();$('msg').textContent='Balance reset to 1000 demo points'}
+  setBtn('BET');
+  setTimeout(()=>{rocket.textContent='🚀';ctx.clearRect(0,0,cv.width,cv.height);rocket.style.left='4%';rocket.style.top='88%';round()},2500);
+}
+
+rocket.style.left='4%';rocket.style.top='88%';
+round();
+</script>
+</body>
+</html>
